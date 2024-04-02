@@ -29,8 +29,7 @@ locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')  # Use 'en_US.UTF-8' for English
 API_KEY = os.getenv('API_KEY')
 GOOGLE_SHEETS_CREDENTIALS_FILE = '/Users/annienhusky/Downloads/annie-402103-d95d776c0d66.json'
 
-# Initialize the Telegram bot
-bot = telebot.TeleBot('6358493005:AAFqsWUuJzRTu-xTVBLHmYJ89-G_QlWErcQ')
+
 
 # Authenticate with Google Sheets using your credentials file
 scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
