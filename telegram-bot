@@ -1,0 +1,550 @@
+#IMPORT LIBRARIES
+import os
+import telebot
+import gspread
+from oauth2client.service_account import ServiceAccountCredentials
+from google.oauth2.service_account import Credentials
+import datetime
+import calendar
+import pandas as pd
+import matplotlib.pyplot as plt
+import io
+from PIL import Image
+from io import BytesIO
+from datetime import date, datetime
+import matplotlib
+from telegram import Update
+matplotlib.use('Agg')  # Use Agg backend for non-GUI environments
+import locale
+import datetime
+import matplotlib.pyplot as plt
+from PIL import Image, ImageDraw, ImageFont #to add logo in the photo
+from telegram import Chat as TGChat
+from dateutil.parser import parse
+locale.setlocale(locale.LC_ALL, 'en_US.UTF-8')  # Use 'en_US.UTF-8' for English
+# from telegram import Bot, types
+
+
+# Retrieve your API keys and tokens
+API_KEY = os.getenv('API_KEY')
+GOOGLE_SHEETS_CREDENTIALS_FILE = '/Users/annienhusky/Downloads/annie-402103-d95d776c0d66.json'
+
+# Initialize the Telegram bot
+bot = telebot.TeleBot('6358493005:AAFqsWUuJzRTu-xTVBLHmYJ89-G_QlWErcQ')
+
+# Authenticate with Google Sheets using your credentials file
+scope = ['https://spreadsheets.google.com/feeds', 'https://www.googleapis.com/auth/drive']
+credentials = ServiceAccountCredentials.from_json_keyfile_name(GOOGLE_SHEETS_CREDENTIALS_FILE, scope)
+gc = gspread.authorize(credentials)
+sheet = gc.open('Spending Record').sheet1
+
+#WOKRING FUNCTIONS
+
+@bot.message_handler(commands=['start'])
+def start(message):
+    bot.send_message(message.chat.id, "Chào mừng bạn đến với bot chi tiêu! Để biết thêm về những cú pháp, bạn hãy nhắn /help nhé.")
+
+@bot.message_handler(func=lambda message: message.text.lower() == '/chao' or message.text.lower() == '/chào')
+def greet(message):
+    bot.reply_to(message, 'Chào bạn, mình là Tek, trợ lí ảo của bạn. Mình ở đây để hỗ trợ bạn trong việc ghi chép các khoản chi tiêu.')
+
+@bot.message_handler(func=lambda message: message.text.lower() == '/hi')
+def greet(message):
+    bot.reply_to(message, "Hey, it's Tek here, your friendly virtual assistant! 😄 I'm here to help you with taking note of your expenses. Just let me know what you need, and I'll be at your service.")
+
+@bot.message_handler(func=lambda message: message.text.lower() == '/help' or message.text.lower() == '/Help')
+def help(message):
+    bot.reply_to(message, 'Dưới đây là những câu lệnh có thể giúp bạn quản lí chi tiêu:')
+
+@bot.message_handler(func=lambda message: message.text.lower() == '/chi')
+def help(message):
+    bot.reply_to(message, 'Dưới đây là những câu lệnh có thể giúp bạn quản lí chi tiêu:')
+
+
+@bot.message_handler(func=lambda message: message.text.lower().startswith('/chi'))
+def record_expense(message):
+    try:
+        data = message.text.split()
+        if len(data) >= 3:
+            item = " ".join(data[1:-1])
+            price = int(data[-1]) * 1000  # Convert the price to the desired format
+            formatted_price = f'{price:,.0f}'  # Format the price with commas
+            current_date = datetime.date.today().strftime("%Y-%m-%d")  # Format as "YYYY-MM-DD"
+            
+            # Add a new row with the item, price, and current date
+            sheet.append_row([current_date, item, formatted_price])  # Save the date, item, and formatted price
+            
+            bot.reply_to(message, f'Chi {item} vào ngày {current_date} với số tiền {formatted_price} đã được lưu.')
+        else:
+            bot.reply_to(message, 'Cú pháp không hợp lệ. Bạn hãy dùng mẫu sau "/chi [mặt hàng] [số tiền]". Ví dụ /chi starbuck 80.')
+    except Exception as e:
+        bot.reply_to(message, f'Cú pháp không hợp lệ. Bạn hãy dùng mẫu sau "/chi [mặt hàng] [số tiền]". Ví dụ /chi starbuck 80.')
+
+
+#FUNCTION TONG
+@bot.message_handler(func=lambda message: message.text.lower().startswith('/tong'))
+def read_expenses_by_date(message):
+    try:
+        command_text = message.text.lower().replace('/tong', '').strip()
+
+        if not command_text:
+            # If no date is specified, assume the current date
+            expense_date = date.today()
+        else:
+            # Parse the date from the command text
+            try:
+                expense_date = parse(command_text).date()
+            except ValueError:
+                bot.reply_to(message, "Please provide a valid date in the format 'DD/MM/YYYY' after the /tong command.")
+                return
+
+        data = sheet.get_all_values()  # Fetch all values from the sheet
+        df = pd.DataFrame(data[1:], columns=data[0])  # Assuming the first row contains headers
+
+        # Change the format of column Date and column Price
+        df['Date'] = pd.to_datetime(df['Date'], format='%Y-%m-%d')
+        df['Price'] = df['Price'].str.replace(',', '', regex=True).astype(int)
+        # Filter rows for the provided date
+        selected_expenses = df[df['Date'].dt.strftime('%Y-%m-%d') == expense_date.strftime('%Y-%m-%d')]
+
+        if not selected_expenses.empty:
+            total_expense = selected_expenses['Price'].astype(int).sum()
+            response = f'Tổng chi ngày {expense_date.strftime("%m/%d/%Y")} là: {total_expense:,.0f} VND\n'
+        else:
+            response = f'Không có chi phí được ghi lại cho ngày {expense_date.strftime("%d/%m/%Y")}'
+
+        bot.reply_to(message, response)
+    except Exception as e:
+        bot.reply_to(message, f'An error occurred: {str(e)}')
+
+
+                                                                                                                                                                                              
+@bot.message_handler(func=lambda message: message.text.lower().startswith('/homqua'))
+def read_yesterday_expense(message):
+    try:
+        yesterday = (datetime.date.today() - datetime.timedelta(days=1)).strftime("%Y-%m-%d")
+        data = sheet.get_all_values()  # Fetch all values from the sheet
+        df = pd.DataFrame(data[1:], columns=data[0])  # Assuming the first row contains header
+        #Change the format of column Date and column Price
+        df['Date'] = pd.to_datetime(df['Date'], format='%Y-%m-%d')
+        df['Price'] = df['Price'].str.replace(',', '', regex=True).astype(int)
+        yesterday_expenses = df[df['Date'] == yesterday]
+
+        if not yesterday_expenses.empty:
+            total_yesterday_expense = yesterday_expenses['Price'].astype(int).sum()
+            response = f'Tổng chi hôm qua là: {total_yesterday_expense:,.0f} VND\n'
+        else:
+            response = 'Không có chi phí được ghi lại cho ngày hôm qua'
+        
+        bot.reply_to(message, response) 
+    except Exception as e:
+        bot.reply_to(message, f'An error occurred: {str(e)}')
+
+@bot.message_handler(func=lambda message: message.text.lower().startswith('/tuantruoc'))
+def read_lastweek_expense(message):
+    try:
+        today = datetime.date.today()
+        last_week_start = today - datetime.timedelta(days=today.weekday() + 7)
+        last_week_end = today - datetime.timedelta(days=today.weekday() + 1)
+        
+        last_week_start_str = last_week_start.strftime("%Y-%m-%d")
+        last_week_end_str = last_week_end.strftime("%Y-%m-%d")
+        
+        data = sheet.get_all_values()  # Fetch all values from the sheet
+        df = pd.DataFrame(data[1:], columns=data[0])  # Assuming the first row contains header
+        # Change the format of column Date and column Price
+        df['Date'] = pd.to_datetime(df['Date'], format='%Y-%m-%d')
+        df['Price'] = df['Price'].str.replace(',', '', regex=True).astype(int)
+        
+        last_week_expenses = df[(df['Date'] >= last_week_start_str) & (df['Date'] <= last_week_end_str)]
+        
+        if not last_week_expenses.empty:
+            total_last_week_expense = last_week_expenses['Price'].astype(int).sum()
+            response = f'Tổng chi tuần trước từ {last_week_start_str} đến {last_week_end_str} là: {total_last_week_expense:,.0f} VND\n'
+        else:
+            response = f'Không có chi phí được ghi lại trong tuần trước'
+        
+        bot.reply_to(message, response)
+    except Exception as e:
+        bot.reply_to(message, f'An error occurred: {str(e)}')
+
+
+import datetime
+
+@bot.message_handler(func=lambda message: message.text.lower().startswith('/tuan'))
+def read_current_week_expense(message):
+    try:
+        today = datetime.date.today()
+        current_week_start = today - datetime.timedelta(days=today.weekday())
+        
+        current_week_start_str = current_week_start.strftime("%Y-%m-%d")
+        today_str = today.strftime("%Y-%m-%d")
+        
+        data = sheet.get_all_values()  # Fetch all values from the sheet
+        df = pd.DataFrame(data[1:], columns=data[0])  # Assuming the first row contains a header
+        # Change the format of column Date and column Price
+        df['Date'] = pd.to_datetime(df['Date'], format='%Y-%m-%d')
+        df['Price'] = df['Price'].str.replace(',', '', regex=True).astype(int)
+        
+        current_week_expenses = df[(df['Date'] >= current_week_start_str) & (df['Date'] <= today_str)]
+        
+        if not current_week_expenses.empty:
+            total_current_week_expense = current_week_expenses['Price'].astype(int).sum()
+            response = f'Tổng chi tuần này từ {current_week_start_str} đến {today_str} là: {total_current_week_expense:,.0f} VND\n'
+        else:
+            response = f'Không có chi phí được ghi lại trong tuần này từ {current_week_start_str} đến {today_str}'
+        
+        bot.reply_to(message, response)
+    except Exception as e:
+        bot.reply_to(message, f'An error occurred: {str(e)}')
+
+
+
+@bot.message_handler(func=lambda message: message.text.lower().startswith('/thangtruoc'))
+def read_last_month_expense(message):
+    try:
+        today = datetime.date.today()
+        last_month_start = today.replace(day=1) - datetime.timedelta(days=1)
+        last_month_end = today.replace(day=1) - datetime.timedelta(days=1)
+        
+        last_month_start_str = last_month_start.replace(day=1).strftime("%Y-%m-%d")
+        last_month_end_str = last_month_end.strftime("%Y-%m-%d")
+        
+        data = sheet.get_all_values()  # Fetch all values from the sheet
+        df = pd.DataFrame(data[1:], columns=data[0])  # Assuming the first row contains header
+        # Change the format of column Date and column Price
+        df['Date'] = pd.to_datetime(df['Date'], format='%Y-%m-%d')
+        df['Price'] = df['Price'].str.replace(',', '', regex=True).astype(int)
+        
+        last_month_expenses = df[(df['Date'] >= last_month_start_str) & (df['Date'] <= last_month_end_str)]
+        
+        if not last_month_expenses.empty:
+            total_last_month_expense = last_month_expenses['Price'].astype(int).sum()
+            response = f'Tổng chi tháng trước từ {last_month_start_str} đến {last_month_end_str} là: {total_last_month_expense:,.0f} VND\n'
+        else:
+            response = f'Không có chi phí được ghi lại trong tháng trước từ {last_month_start_str} đến {last_month_end_str}'
+        
+        bot.reply_to(message, response)
+    except Exception as e:
+        bot.reply_to(message, f'An error occurred: {str(e)}')
+
+#Summary of that month
+@bot.message_handler(func=lambda message: message.text.lower().startswith('/thang'))
+def read_this_month_expense(message):
+    try:
+        today = datetime.date.today()
+        current_month_start = today.replace(day=1)
+        current_month_end = today
+        
+        current_month_start_str = current_month_start.strftime("%Y-%m-%d")
+        current_month_end_str = current_month_end.strftime("%Y-%m-%d")
+        
+        data = sheet.get_all_values()  # Fetch all values from the sheet
+        df = pd.DataFrame(data[1:], columns=data[0])  # Assuming the first row contains header
+        # Change the format of column Date and column Price
+        df['Date'] = pd.to_datetime(df['Date'], format='%Y-%m-%d')
+        df['Price'] = df['Price'].str.replace(',', '', regex=True).astype(int)
+        
+        current_month_expenses = df[(df['Date'] >= current_month_start_str) & (df['Date'] <= current_month_end_str)]
+        
+        if not current_month_expenses.empty:
+            total_current_month_expense = current_month_expenses['Price'].astype(int).sum()
+            response = f'Tổng chi tháng này từ {current_month_start_str} đến {current_month_end_str} là: {total_current_month_expense:,.0f} VND\n'
+        else:
+            response = f'Không có chi phí được ghi lại trong tháng này từ {current_month_start_str} đến {current_month_end_str}'
+        
+        bot.reply_to(message, response)
+    except Exception as e:
+        bot.reply_to(message, f'An error occurred: {str(e)}')
+
+#Summary of specific month
+@bot.message_handler(func=lambda message: message.text.lower().startswith('/thang'))
+def read_monthly_expense(message):
+    try:
+        command_text = message.text.lower().replace('/thang', '').strip()
+
+        if not command_text:
+            bot.reply_to(message, "Please provide a month and year in the format 'MM/YYYY' after the /thang command.")
+            return
+
+        # Parse the month and year from the command text
+        try:
+            month, year = command_text.split('/')
+            month = int(month)
+            year = int(year)
+        except (ValueError, IndexError):
+            bot.reply_to(message, "Please provide a valid month and year in the format 'MM/YYYY' after the /thang command.")
+            return
+
+        # Calculate the start and end dates of the specified month
+        first_day_of_month = datetime.date(year, month, 1)
+        last_day_of_month = datetime.date(year, month, calendar.monthrange(year, month)[1])
+
+        data = sheet.get_all_values()  # Fetch all values from the sheet
+        df = pd.DataFrame(data[1:], columns=data[0])  # Assuming the first row contains headers
+
+        # Change the format of column Date and column Price
+        df['Date'] = pd.to_datetime(df['Date'], format='%Y-%m-%d')
+        df['Price'] = df['Price'].str.replace(',', '', regex=True).astype(int)
+
+        # Filter rows for the specified month and year
+        monthly_expenses = df[(df['Date'] >= first_day_of_month) & (df['Date'] <= last_day_of_month)]
+
+        if not monthly_expenses.empty:
+            total_monthly_expense = monthly_expenses['Price'].astype(int).sum()
+            response = f'Tổng chi tháng {month}/{year} là: {total_monthly_expense:,.0f} VND\n'
+        else:
+            response = f'Không có chi phí được ghi lại trong tháng {month}/{year}'
+
+        bot.reply_to(message, response)
+    except Exception as e:
+        bot.reply_to(message, f'An error occurred: {str(e)}')
+
+
+
+
+
+def summarize_expenses_by_date():
+    today = datetime.date.today()
+    data = sheet.get_all_values()  # Fetch all values from the sheet
+    df = pd.DataFrame(data[1:], columns=data[0])  # Assuming the first row contains headers
+    summarized_data = []
+
+    # Summarize expenses by date
+    date_expenses = {}
+    for index, row in df.iterrows():
+        date_string = row['Date']
+        amount = row['Price'] 
+
+        # Convert the 'amount' to an integer (remove commas and convert to int)
+        amount = int(amount.replace(',', ''))
+
+        # Convert the 'date_string' to a datetime.date object
+        date = datetime.datetime.strptime(date_string, '%Y-%m-%d').date()
+
+        if date in date_expenses:
+            date_expenses[date] += amount
+        else:
+            date_expenses[date] = amount
+
+    # Convert the summarized data to the desired format
+    for date, total in date_expenses.items():
+        summarized_data.append({'Date': date, 'Total': total})
+    return summarized_data
+
+
+# @bot.message_handler(func=lambda message: message.text.lower().startswith('/detail'))
+# def read_detail(message):
+#     try:
+#         text = message.text.lower().replace('/detail', '').strip()
+
+#         # Check if the user provided a date, otherwise assume the current date
+#         if not text:
+#             expense_date = date.today()
+#         else:
+#             # Use dateutil.parser to parse the date
+#             try:
+#                 expense_date = parse(text).date()
+#             except ValueError:
+#                 bot.reply_to(message, "Please provide a valid date in a recognized format or leave it empty for the current date.")
+#                 return
+
+#         data = sheet.get_all_values()  # Fetch all values from the sheet
+#         df = pd.DataFrame(data[1:], columns=data[0])  # Assuming the first row contains headers
+
+#         # Change the format of column Date and column Price
+#         df['Date'] = pd.to_datetime(df['Date'], format='%Y-%m-%d')
+#         df['Price'] = df['Price'].str.replace(',', '', regex=True).astype(int)
+#         # Filter rows for the provided date
+#         selected_expenses = df[df['Date'].dt.strftime('%Y-%m-%d') == expense_date.strftime('%Y-%m-%d')]
+
+#         if not selected_expenses.empty:
+#             total_expense = selected_expenses['Price'].astype(int).sum()
+#             response = f'Tổng chi ngày {expense_date.strftime("%m/%d/%Y")} là: {total_expense:,.0f} VND\n'
+#             response += f'Chi tiết: \n'
+
+#             for index, row in selected_expenses.iterrows():
+#                 transaction_id = index + 2  # Add 2 because the first row is headers and Python is zero-indexed
+#                 response += f"ID {transaction_id}: Ngày {row['Date'].strftime('%d/%m')}: {row['Items']} - {row['Price']:,.0f} VND\n"
+#         else:
+#             response = f'Không có chi phí được ghi lại cho ngày {expense_date.strftime("%m/%d/%Y")}'
+
+#         bot.reply_to(message, response)
+#     except Exception as e:
+#         bot.reply_to(message, f'An error occurred: {str(e)}')
+
+# from datetime import datetime, timedelta  # Add this import statement
+
+@bot.message_handler(func=lambda message: message.text.lower().startswith('/detail'))
+def read_detail(message):
+    try:
+        text = message.text.lower().replace('/detail', '').strip()
+
+        # Check if the user provided a specific request or leave it for current date
+        if not text:
+            expense_date = date.today()
+        elif 'thang' in text:
+            expense_date = date.today().replace(day=1)  # First day of the current month
+        elif 'tuan' in text:
+            today = date.today()
+            expense_date = today - timedelta(days=today.weekday())  # Start of the current week
+        else:
+            # Use dateutil.parser to parse the date
+            try:
+                expense_date = parse(text).date()
+            except ValueError:
+                bot.reply_to(message, "Please provide a valid date in a recognized format, '/detail thang' for the current month, '/detail tuan' for the current week, or leave it empty for the current date.")
+                return
+
+        data = sheet.get_all_values()  # Fetch all values from the sheet
+        df = pd.DataFrame(data[1:], columns=data[0])  # Assuming the first row contains headers
+
+        # Change the format of column Date and column Price
+        df['Date'] = pd.to_datetime(df['Date'], format='%Y-%m-%d')
+        df['Price'] = df['Price'].str.replace(',', '', regex=True).astype(int)
+
+        if not text:
+            # Filter rows for the provided date (current day)
+            selected_expenses = df[df['Date'].dt.date == expense_date]
+        elif 'thang' in text:
+            # Extract year and month from the provided date
+            year = expense_date.year
+            month = expense_date.month
+            # Filter rows for the provided month and year
+            selected_expenses = df[(df['Date'].dt.year == year) & (df['Date'].dt.month == month)]
+        elif 'tuan' in text:
+            # Extract year and week number from the provided date
+            year, week_num, _ = expense_date.isocalendar()
+            # Filter rows for the provided week and year
+            selected_expenses = df[(df['Date'].dt.year == year) & (df['Date'].dt.isocalendar().week == week_num)]
+        else:
+            # Handle other date formats or unrecognized commands
+            # ... (your existing code for date parsing)
+            pass
+
+        if not selected_expenses.empty:
+            total_expense = selected_expenses['Price'].astype(int).sum()
+            response = f'Tổng chi {expense_date.strftime("%d/%m/%Y")} là: {total_expense:,.0f} VND\n'
+            response += f'Chi tiết: \n'
+
+            for index, row in selected_expenses.iterrows():
+                transaction_id = index + 2  # Add 2 because the first row is headers and Python is zero-indexed
+                response += f"ID {transaction_id}: Ngày {row['Date'].strftime('%d/%m')}: {row['Items']} - {row['Price']:,.0f} VND\n"
+        else:
+            response = f'Không có chi phí được ghi lại cho ngày {expense_date.strftime("%d/%m/%Y")}'
+
+        bot.reply_to(message, response)
+    except Exception as e:
+        bot.reply_to(message, f'An error occurred: {str(e)}')
+
+
+
+
+
+
+# #Function to send bar chart summarize of expense
+@bot.message_handler(func=lambda message: message.text.lower() == '/bieudo')
+def detail_expenses(message):
+    try:
+        # Get the summarized data
+        summarized_data = summarize_expenses_by_date()
+        if not summarized_data:
+            bot.reply_to(message, 'No expense data available.')
+            return
+
+        # Calculate the start and end dates for the current week (from Monday to Sunday)
+        today = datetime.date.today()
+        current_week_start = today - datetime.timedelta(days=today.weekday())
+        current_week_end = current_week_start + datetime.timedelta(days=6)
+
+        # Filter the summarized data to include only entries for the current week
+        current_week_data = [entry for entry in summarized_data if current_week_start <= entry['Date'] <= current_week_end]
+
+        if not current_week_data:
+            bot.reply_to(message, 'No expense data available for the current week.')
+            return
+
+        # Extract dates and expenses for the current week
+        dates = [entry['Date'] for entry in current_week_data]
+        expenses = [entry['Total'] for entry in current_week_data]
+
+        locale.setlocale(locale.LC_ALL, 'en_US')
+
+        plt.figure(figsize=(10, 6))
+        bars = plt.bar(dates, expenses)
+        plt.xticks(dates, [date.strftime('%Y-%m-%d') for date in dates], rotation=0, fontsize=12)
+        plt.title('Tổng chi tuần này', fontweight='bold', fontsize=16, y=1.06)
+        ax = plt.gca()
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+        ax.spines['left'].set_visible(False)
+        plt.yticks([])
+
+        # Add labels on top of each bar
+        for bar, expense in zip(bars, expenses):
+            formatted_expense = locale.format_string("%d", expense, grouping=True)
+            plt.text(bar.get_x() + bar.get_width() / 2, bar.get_height(), formatted_expense,
+                     ha='center', va='bottom', fontsize=14)
+            
+        for bar, expense in zip(bars, expenses):
+            formatted_expense = locale.format_string("%d", expense, grouping=True) 
+            plt.text(bar.get_x() + bar.get_width() / 2,  # x-coordinate (centered on the bar)
+                bar.get_height() + 100,             # y-coordinate (positioned farther from the bar)
+                formatted_expense,
+                ha='center',                       # horizontal alignment
+                va='bottom',                       # vertical alignment
+                fontsize=14)                       # larger font size
+
+        # Save the chart as an image
+        plt.savefig('expense_summary.png', format='png')
+        # Send the chart as a photo to the user
+        bot.send_photo(message.chat.id, open('expense_summary.png', 'rb'), caption='Chi tiêu trong tuần này')
+
+    except Exception as e:
+        bot.reply_to(message, f'An error occurred: {str(e)}')
+
+#Function to delete row in spreadsheet
+def delete_row_by_index(sheet, index):
+    try:
+        sheet.delete_rows(index + 1)  # +1 because the index is 0-based
+        return True  # Return True if successful
+    except Exception as e:
+        print(f"An error occurred: {str(e)}")
+        return False  # Return False if there was an error
+
+
+def get_row_content(sheet, row_index):
+    try:
+        row = sheet.row_values(row_index + 1)  # Adjust for 1-based index
+        return ', '.join(row)  # Join the row's values as a comma-separated string (modify as needed)
+    except Exception as e:
+        return f"An error occurred while retrieving row {row_index}: {str(e)}"
+
+# Usage example
+row_number = 5  # Replace with the actual row number you want to retrieve
+row_content = get_row_content(sheet, row_number - 1)  # Adjust for 0-based index
+
+@bot.message_handler(func=lambda message: message.text.lower().startswith('/xoa'))
+def delete_row_by_command(message):
+    try:
+        command_parts = message.text.split()
+        if len(command_parts) != 2:
+            bot.reply_to(message, 'Please use the command in the format: /xoa <row_number>')
+            return
+
+        row_number = int(command_parts[1])
+
+        # Capture the content of the row before deleting it
+        deleted_content = get_row_content(sheet, row_number - 1)  # Adjust for 0-based index
+        result = delete_row_by_index(sheet, row_number - 1)  # Adjust for 0-based index
+
+        if result:
+            bot.reply_to(message, f"Đã xoá dòng {row_number} thành công. \n"
+                     f"Nội dung đã xoá: \n {deleted_content}")
+        else:
+            bot.reply_to(message, f"Failed to delete row {row_number}.")
+    except Exception as e:
+        bot.reply_to(message, f'An error occurred: {str(e)}')
+
+
+bot.polling()
